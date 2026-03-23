@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>豆單測驗</title>
+<style>
+  body {
+    font-family: sans-serif;
+    padding: 20px;
+    max-width: 760px;
+    margin: auto;
+    line-height: 1.5;
+  }
+
+  input {
+    width: 100%;
+    padding: 8px;
+    margin: 5px 0;
+    box-sizing: border-box;
+  }
+
+  .row {
+    margin-bottom: 10px;
+  }
+
+  .correct {
+    background: #d4edda;
+    padding: 6px;
+  }
+
+  .wrong {
+    background: #f8d7da;
+    padding: 6px;
+  }
+
+  button {
+    padding: 10px 14px;
+    margin: 5px;
+    cursor: pointer;
+  }
+
+  .answerBox {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid #ccc;
+  }
+
+  .topButtons {
+    margin-bottom: 16px;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  hr {
+    margin: 16px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="topButtons">
+  <button onclick="startQuizSet('single')">單品豆單測驗</button>
+  <button onclick="startQuizSet('blend')">配方豆單測驗</button>
+</div>
+
+<h3 id="setText">請先選擇題庫</h3>
+<h3 id="modeText"></h3>
+<h2 id="questionNum"></h2>
+
+<div id="table"></div>
+<div id="feedback" class="answerBox"></div>
+<div id="resultPage" class="hidden"></div>
+
+<div id="controlArea">
+  <button onclick="prev()">上一題</button>
+  <button id="checkBtn" onclick="checkAnswer()">確認答案</button>
+  <button onclick="next()">下一題</button>
+  <button onclick="toggleMode()">切換模式</button>
+</div>
+
+<script src="singleData.js"></script>
+<script src="blendData.js"></script>
+
+<script>
+const label = {
+  country: "國家",
+  process: "處理方式",
+  roast: "焙度",
+  taste: "口味",
+  flavor: "入口風味",
+  priceQuarter: "1/4磅價錢",
+  priceHalf: "1/2磅價錢",
+  drip: "掛耳單包"
+};
+
+let index = 0;
+let mode = "practice"; // practice / exam
+let answers = {};
+let blanksRecord = {};
+let shuffledData = [];
+let currentSet = "";
+let currentNormalFields = [];
+let currentPriceFields = [];
+
+// -------------------- 工具 --------------------
+function shuffle(arr) {
+  return [...arr].sort(() => Math.random() - 0.5);
+}
+
+function split(v) {
+  return (v || "")
+    .replace(/，/g, "、")
+    .split("、")
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function getSourceData(setName) {
+  return setName === "single" ? singleData : blendData;
+}
+
+function getFieldConfig(setName) {
+  if (setName === "single") {
+    return {
+      normal: ["country", "process", "roast", "taste", "flavor"],
+      price: ["priceQuarter", "priceHalf", "drip"]
+    };
+  }
+
+  return {
+    normal: ["country", "roast", "taste", "flavor"],
+    price: ["priceHalf", "drip"]
+  };
+}
+
+// -------------------- 開始題庫 --------------------
+function startQuizSet(setName) {
+  currentSet = setName;
+
+  const config = getFieldConfig(setName);
+  currentNormalFields = config.normal;
+  currentPriceFields = config.price;
+
+  document.getElementById("setText").innerText =
+    setName === "single" ? "目前題庫：單品豆單" : "目前題庫：配方豆單";
+
+  init();
+}
+
+// -------------------- 初始化 --------------------
+function init() {
+  if (!currentSet) return;
+
+  shuffledData = shuffle(getSourceData(currentSet));
+  index = 0;
+  answers = {};
+  blanksRecord = {};
+
+  document.getElementById("table").style.display = "block";
+  document.getElementById("feedback").style.display = "block";
+  document.getElementById("resultPage").classList.add("hidden");
+  document.getElementById("controlArea").style.display = "block";
+
+  render();
+}
+
+// -------------------- 挖空規則 --------------------
+// 主資料抽 2~3 個
+// 價格欄位最多另外再抽 1 個
+function getBlanks(i) {
+  if (blanksRecord[i]) return blanksRecord[i];
+
+  const bean = shuffledData[i];
+
+  const availableNormal = currentNormalFields.filter(key => {
+    const value = bean[key];
+    return value !== undefined && value !== "";
+  });
+
+  const normalCount = Math.min(
+    availableNormal.length,
+    Math.floor(Math.random() * 2) + 2 // 2~3
+  );
+
+  const pickedNormal = shuffle(availableNormal).slice(0, normalCount);
+
+  const availablePrice = currentPriceFields.filter(key => {
+    const value = bean[key];
+    return value !== undefined && value !== "";
+  });
+
+  let pickedPrice = [];
+  if (availablePrice.length > 0) {
+    // 價格欄位最多只抽 1 個
+    // 若你想改成「有時候不出價格」，可把這裡再加機率判斷
+    pickedPrice = shuffle(availablePrice).slice(0, 1);
+  }
+
+  const result = [...pickedNormal, ...pickedPrice];
+  blanksRecord[i] = result;
+  return result;
+}
+
+// -------------------- 顯示題目 --------------------
+function render() {
+  if (!shuffledData.length) return;
+
+  const bean = shuffledData[index];
+  const blanks = getBlanks(index);
+  const allFields = [...currentNormalFields, ...currentPriceFields];
+
+  document.getElementById("modeText").innerText =
+    mode === "practice" ? "練習模式" : "測驗模式";
+
+  document.getElementById("questionNum").innerText =
+    `第 ${index + 1} 題 / ${shuffledData.length}`;
+
+  document.getElementById("checkBtn").style.display =
+    mode === "practice" ? "inline-block" : "none";
+
+  let html = `<div class="row"><b>品項：</b>${bean.item}</div>`;
+
+  for (const key of allFields) {
+    if (!(key in bean)) continue;
+    const value = bean[key];
+    if (value === undefined || value === "") continue;
+
+    if (blanks.includes(key)) {
+      html += `
+        <div class="row">
+          <b>${label[key]}：</b>
+          <input id="${key}" value="${answers[index]?.[key] || ""}">
+        </div>
+      `;
+    } else {
+      html += `<div class="row"><b>${label[key]}：</b>${value}</div>`;
+    }
+  }
+
+  document.getElementById("table").innerHTML = html;
+  document.getElementById("feedback").innerHTML = "";
+}
+
+// -------------------- 儲存答案 --------------------
+function saveAnswers(bean) {
+  const allFields = [...currentNormalFields, ...currentPriceFields];
+  answers[index] = answers[index] || {};
+
+  for (const key of allFields) {
+    const input = document.getElementById(key);
+    if (input) {
+      answers[index][key] = input.value;
+    }
+  }
+}
+
+// -------------------- 評分 --------------------
+// flavor、country 視為可多答案欄位，不看順序，亂填扣分
+function checkCore(bean, userAnswers) {
+  let html = "";
+  let score = 0;
+  let total = 0;
+
+  const allFields = [...currentNormalFields, ...currentPriceFields];
+
+  for (const key of allFields) {
+    if (!(key in bean)) continue;
+    const correctValue = bean[key];
+    if (correctValue === undefined || correctValue === "") continue;
+
+    const userValue = userAnswers[key];
+    if (userValue === undefined) continue;
+
+    total++;
+
+    if (key === "flavor" || key === "country") {
+      const correctArr = split(correctValue);
+      const userArr = split(userValue);
+
+      const hit = userArr.filter(v => correctArr.includes(v)).length;
+      const extra = userArr.filter(v => !correctArr.includes(v)).length;
+
+      let s = (hit / correctArr.length) - (extra * 0.2);
+      s = Math.max(0, s);
+
+      score += s;
+
+      html += `
+        <div class="${s === 1 ? "correct" : "wrong"}">
+          ${label[key]}：${userValue || "未填"}｜正確：${correctValue}
+        </div>
+      `;
+    } else {
+      if (userValue === correctValue) {
+        score++;
+        html += `<div class="correct">${label[key]} 正確</div>`;
+      } else {
+        html += `
+          <div class="wrong">
+            ${label[key]}：${userValue || "未填"}｜正確：${correctValue}
+          </div>
+        `;
+      }
+    }
+  }
+
+  return { score: total ? score / total : 0, html };
+}
+
+// -------------------- 練習模式確認答案 --------------------
+function checkAnswer() {
+  if (mode !== "practice" || !shuffledData.length) return;
+
+  const bean = shuffledData[index];
+  saveAnswers(bean);
+
+  const result = checkCore(bean, answers[index]);
+  document.getElementById("feedback").innerHTML =
+    result.html + `<br><b>得分：${result.score.toFixed(2)}</b>`;
+}
+
+// -------------------- 下一題 --------------------
+function next() {
+  if (!shuffledData.length) return;
+
+  const bean = shuffledData[index];
+  saveAnswers(bean);
+
+  if (index < shuffledData.length - 1) {
+    index++;
+    render();
+  } else {
+    showResult();
+  }
+}
+
+// -------------------- 上一題 --------------------
+function prev() {
+  if (!shuffledData.length) return;
+
+  if (index > 0) {
+    index--;
+    render();
+  }
+}
+
+// -------------------- 切換模式 --------------------
+function toggleMode() {
+  if (!currentSet) return;
+
+  mode = mode === "practice" ? "exam" : "practice";
+  init();
+}
+
+// -------------------- 顯示結果頁 --------------------
+function showResult() {
+  let totalScore = 0;
+  const totalQuestions = shuffledData.length;
+
+  let html = `<h3>${
+    currentSet === "single" ? "單品豆單" : "配方豆單"
+  }結果</h3>`;
+
+  shuffledData.forEach((bean, i) => {
+    const result = checkCore(bean, answers[i] || {});
+    totalScore += result.score;
+
+    html += `<hr><b>第 ${i + 1} 題：${bean.item}</b>`;
+    html += result.html;
+  });
+
+  const final = totalQuestions
+    ? (totalScore / totalQuestions * 100).toFixed(0)
+    : 0;
+
+  html += `<h2>總分：${final}</h2>`;
+  html += `<button id="restartBtn">重新測驗</button>`;
+
+  document.getElementById("table").style.display = "none";
+  document.getElementById("feedback").style.display = "none";
+  document.getElementById("resultPage").classList.remove("hidden");
+  document.getElementById("resultPage").innerHTML = html;
+
+  document.getElementById("restartBtn").onclick = function () {
+    init();
+  };
+}
+</script>
+
+</body>
+</html>
